@@ -1,0 +1,5 @@
+env
+.env
+service.yaml
+*.log
+*.sqlite3
