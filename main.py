@@ -1,38 +1,39 @@
-from flask import Flask
-from googleapiclient import discovery
-from google.auth import default
-import os, traceback
+from flask import Flask, request
+import os
+import traceback
+
+from vm_restart import (
+    get_required_env,
+    perform_action,
+)
 
 app = Flask(__name__)
 
 @app.route("/")
 def restart_vm():
     try:
-        creds, project = default()
-        project_id = os.getenv("PROJECT_ID")
-        zone = os.getenv("ZONE")
-        instance_name = os.getenv("INSTANCE_NAME")
+        project_id = get_required_env("PROJECT_ID")
+        zone = get_required_env("ZONE")
+        instance_name = get_required_env("INSTANCE_NAME")
 
-        service = discovery.build('compute', 'v1', credentials=creds)
-        print(f"🔁 Restarting {instance_name} in {zone} ({project_id})")
-
-        # Try stopping the VM
-        try:
-            service.instances().stop(project=project_id, zone=zone, instance=instance_name).execute()
-            print("🛑 VM stop requested")
-        except Exception as e:
-            print(f"⚠️ Stop skipped: {e}")
-
-        # Always try to start it
-        service.instances().start(project=project_id, zone=zone, instance=instance_name).execute()
-        print("🚀 VM start requested")
-
-        return f"✅ Restarted VM '{instance_name}' in zone '{zone}' (project: {project_id})", 200
+        action = request.args.get("action", "restart").lower()
+        if action not in {"restart", "stop", "start"}:
+            return ("Invalid action. Use one of: restart, stop, start", 400)
+        print(f"➡️ Action={action} instance={instance_name} zone={zone} project={project_id}")
+        op_names = perform_action(action, project_id, zone, instance_name, wait=True)
+        return {
+            "status": "ok",
+            "action": action,
+            "project": project_id,
+            "zone": zone,
+            "instance": instance_name,
+            "operations": op_names,
+        }, 200
 
     except Exception as e:
         print("❌ ERROR restarting VM:")
         traceback.print_exc()
-        return f"Error restarting VM: {e}", 500
+        return {"status": "error", "message": str(e)}, 500
 
 
 if __name__ == "__main__":

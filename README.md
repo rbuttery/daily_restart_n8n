@@ -6,7 +6,7 @@ This project deploys a **Cloud Run service** that restarts a GCP VM instance dai
 
 ## ⚙️ 1. Authenticate and Configure GCloud
 
-### Login to GCP
+### Login to GCP (user and ADC)
 ```powershell
 gcloud auth login
 gcloud auth application-default login
@@ -64,6 +64,15 @@ gcloud projects add-iam-policy-binding n8n-automations-450821 `
   --role="roles/artifactregistry.writer"
 ```
 
+### Allow runtime to manage the VM (critical)
+The Cloud Run runtime service account must be able to stop/start the VM. Grant it Compute Instance Admin.
+
+```powershell
+gcloud projects add-iam-policy-binding n8n-automations-450821 `
+  --member="serviceAccount:669887151122-compute@developer.gserviceaccount.com" `
+  --role="roles/compute.instanceAdmin.v1"
+```
+
 ---
 
 ## 🚀 4. Build and Deploy
@@ -75,11 +84,12 @@ gcloud builds submit --tag us-central1-docker.pkg.dev/n8n-automations-450821/vm-
 
 ### Deploy to Cloud Run
 ```powershell
+# PowerShell note: wrap the value to avoid comma-splitting
 gcloud run deploy vm-restart `
   --image us-central1-docker.pkg.dev/n8n-automations-450821/vm-restart-repo/vm-restart `
   --region=us-central1 `
   --allow-unauthenticated `
-  --set-env-vars PROJECT_ID=n8n-automations-450821,ZONE=us-central1-c,INSTANCE_NAME=instance-20250804-155059
+  --set-env-vars "PROJECT_ID=n8n-automations-450821,ZONE=us-central1-c,INSTANCE_NAME=instance-20250804-155059"
 ```
 
 After deployment, note the **Service URL** printed in the output.  
@@ -150,5 +160,67 @@ gcloud run deploy vm-restart `
   --image us-central1-docker.pkg.dev/n8n-automations-450821/vm-restart-repo/vm-restart `
   --region=us-central1 `
   --allow-unauthenticated `
-  --set-env-vars PROJECT_ID=n8n-automations-450821,ZONE=us-central1-c,INSTANCE_NAME=instance-20250804-155059
+  --set-env-vars "PROJECT_ID=n8n-automations-450821,ZONE=us-central1-c,INSTANCE_NAME=instance-20250804-155059"
+```
+
+---
+
+## 🔧 Local testing
+
+Run the Flask app locally (it will try to call GCP APIs):
+
+```powershell
+$env:PROJECT_ID = "n8n-automations-450821"
+$env:ZONE = "us-central1-c"
+$env:INSTANCE_NAME = "instance-20250804-155059"
+python .\main.py
+```
+
+Then in another shell:
+
+```powershell
+curl "http://localhost:8080/?action=restart"
+```
+
+If you haven't run ADC login yet, do:
+
+```powershell
+gcloud auth application-default login
+gcloud auth application-default set-quota-project n8n-automations-450821
+```
+
+---
+
+## 📜 Single-script usage (for future updates)
+
+You can run the logic outside of Flask/Cloud Run using `vm_restart.py`.
+
+Env vars (or pass flags):
+
+```powershell
+$env:PROJECT_ID = "n8n-automations-450821"
+$env:ZONE = "us-central1-c"
+$env:INSTANCE_NAME = "instance-20250804-155059"
+```
+
+Run with defaults (restart + wait):
+
+```powershell
+python .\vm_restart.py
+```
+
+Specify action/flags:
+
+```powershell
+python .\vm_restart.py --action start
+python .\vm_restart.py --action stop
+python .\vm_restart.py --action restart --no-wait
+python .\vm_restart.py --project-id n8n-automations-450821 --zone us-central1-c --instance instance-20250804-155059
+```
+
+Authentication uses Application Default Credentials:
+
+```powershell
+gcloud auth application-default login
+gcloud auth application-default set-quota-project n8n-automations-450821
 ```
